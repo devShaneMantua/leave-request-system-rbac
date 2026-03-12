@@ -1,0 +1,18 @@
+{% extends 'base.html' %}
+{% block content %}
+<section class="card">
+    <h2>{{ title }}</h2>
+    <p class="error">{{ message }}</p>
+    {% if current_user %}
+    {% if current_user['role'] == 'student' %}
+    <a class="btn-link" href="/suggestions/new">Back to Suggestions</a>
+    {% elif current_user['role'] == 'reviewer' %}
+    <a class="btn-link" href="/suggestions">Back to Suggestions</a>
+    {% else %}
+    <a class="btn-link" href="/users">Back to Users</a>
+    {% endif %}
+    {% else %}
+    <a class="btn-link" href="/login">Go to Login</a>
+    {% endif %}
+</section>
+{% endblock %}

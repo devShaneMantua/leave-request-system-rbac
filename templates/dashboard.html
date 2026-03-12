@@ -1,0 +1,65 @@
+{% extends 'base.html' %}
+{% block content %}
+<section class="card">
+    <h2>Dashboard</h2>
+    <p><strong>Role Identification:</strong> You are logged in as <strong>{{ current_user['role'] }}</strong>.</p>
+
+    {% if message %}
+    <p class="success">{{ message }}</p>
+    {% endif %}
+</section>
+
+<section class="card">
+    <h3>Module Permission</h3>
+    <table>
+        <thead>
+            <tr>
+                <th>Module</th>
+                <th>Allowed Actions</th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for module, actions in permissions.items() %}
+            <tr>
+                <td>{{ module|capitalize }}</td>
+                <td>{{ ', '.join(actions) if actions else 'No access' }}</td>
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+</section>
+
+<section class="card">
+    <h3>Permission Authorization (RBAC Table)</h3>
+    <table>
+        <thead>
+            <tr>
+                <th>Role</th>
+                <th>Suggestions</th>
+                <th>Responses</th>
+                <th>Users</th>
+            </tr>
+        </thead>
+        <tbody>
+            <tr>
+                <td>Admin</td>
+                <td>Manage</td>
+                <td>Manage</td>
+                <td>Manage</td>
+            </tr>
+            <tr>
+                <td>Student</td>
+                <td>Submit</td>
+                <td>View</td>
+                <td>No access</td>
+            </tr>
+            <tr>
+                <td>Reviewer</td>
+                <td>View</td>
+                <td>Reply</td>
+                <td>No access</td>
+            </tr>
+        </tbody>
+    </table>
+</section>
+{% endblock %}

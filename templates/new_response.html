@@ -1,0 +1,19 @@
+{% extends 'base.html' %}
+{% block content %}
+<section class="card">
+    <h2>Write Response</h2>
+
+    <p><strong>Suggestion #{{ suggestion['id'] }} by {{ suggestion['student_name'] }}:</strong></p>
+    <p>{{ suggestion['content'] }}</p>
+
+    {% if error %}
+    <p class="error">{{ error }}</p>
+    {% endif %}
+
+    <form action="/responses/new/{{ suggestion['id'] }}" method="post" class="form">
+        <label>Your Response</label>
+        <textarea name="content" rows="6" required></textarea>
+        <button type="submit">Save Response</button>
+    </form>
+</section>
+{% endblock %}

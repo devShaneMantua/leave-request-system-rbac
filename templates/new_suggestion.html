@@ -1,0 +1,20 @@
+{% extends 'base.html' %}
+{% block content %}
+<section class="card">
+    <h2>Submit Suggestion</h2>
+
+    {% if message %}
+    <p class="success">{{ message }}</p>
+    {% endif %}
+
+    {% if error %}
+    <p class="error">{{ error }}</p>
+    {% endif %}
+
+    <form action="/suggestions/new" method="post" class="form">
+        <label>Your Suggestion</label>
+        <textarea name="content" rows="6" required></textarea>
+        <button type="submit">Submit</button>
+    </form>
+</section>
+{% endblock %}
