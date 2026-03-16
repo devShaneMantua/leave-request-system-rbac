@@ -1,9 +1,9 @@
 {% extends 'base.html' %}
 {% block content %}
 <section class="card">
-    <h2>Write Response</h2>
+    <h2>Write Manager Response</h2>
 
-    <p><strong>Suggestion #{{ suggestion['id'] }} by {{ suggestion['student_name'] }}:</strong></p>
+    <p><strong>Feedback #{{ suggestion['id'] }} by {{ suggestion['student_name'] }}:</strong></p>
     <p>{{ suggestion['content'] }}</p>
 
     {% if error %}

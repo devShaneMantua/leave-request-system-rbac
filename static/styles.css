@@ -212,6 +212,23 @@ tr:nth-child(even) td {
     display: inline;
 }
 
+.inline-input,
+.inline-select {
+    padding: 6px 8px;
+    border-radius: 6px;
+    border: 1px solid #c3cedd;
+    background: #fff;
+    min-width: 160px;
+}
+
+.inline-input {
+    width: 100%;
+}
+
+.user-inline-form {
+    display: inline;
+}
+
 .danger {
     background: var(--danger);
 }
@@ -232,6 +249,44 @@ tr:nth-child(even) td {
 
 .muted {
     color: var(--muted);
+}
+
+.status {
+    display: inline-block;
+    padding: 3px 8px;
+    border-radius: 999px;
+    font-size: 0.85rem;
+    font-weight: 700;
+    border: 1px solid var(--line);
+    background: #fff;
+}
+
+.status-approved {
+    color: var(--ok);
+    border-color: rgba(31, 122, 61, 0.35);
+    background: rgba(31, 122, 61, 0.08);
+}
+
+.status-rejected {
+    color: var(--danger);
+    border-color: rgba(180, 35, 24, 0.35);
+    background: rgba(180, 35, 24, 0.08);
+}
+
+.status-pending {
+    color: #7c5c00;
+    border-color: rgba(124, 92, 0, 0.35);
+    background: rgba(245, 158, 11, 0.12);
+}
+
+.btn-ghost {
+    background: transparent;
+    color: var(--accent);
+    border: 1px solid #c3cedd;
+}
+
+.btn-ghost:hover {
+    background: rgba(15, 108, 189, 0.08);
 }
 
 @media (max-width: 700px) {

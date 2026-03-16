@@ -1,0 +1,33 @@
+{% extends 'base.html' %}
+{% block content %}
+<section class="card">
+    <h2>Account Settings</h2>
+
+    {% if message %}
+    <p class="success">{{ message }}</p>
+    {% endif %}
+
+    {% if error %}
+    <p class="error">{{ error }}</p>
+    {% endif %}
+
+    <form action="/account" method="post" class="form" autocomplete="off">
+        <div class="field">
+            <label for="full_name">Full name</label>
+            <input id="full_name" type="text" name="full_name" value="{{ current_user['full_name'] }}" required />
+        </div>
+
+        <div class="field">
+            <label for="username">Username</label>
+            <input id="username" type="text" name="username" value="{{ current_user['username'] }}" required />
+        </div>
+
+        <div class="field">
+            <label for="password">New password (optional)</label>
+            <input id="password" type="password" name="password" placeholder="Leave blank to keep current password" />
+        </div>
+
+        <button type="submit" onclick="return confirm('✅ Save account changes?')">Save</button>
+    </form>
+</section>
+{% endblock %}

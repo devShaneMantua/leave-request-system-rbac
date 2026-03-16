@@ -7,7 +7,12 @@
     <p class="error">{{ error }}</p>
     {% endif %}
 
-    <form action="/users/new" method="post" class="form inline-grid user-form">
+    <form action="/users/new" method="post" class="form inline-grid user-form" autocomplete="off">
+        <div class="field">
+            <label for="full_name">Full name</label>
+            <input id="full_name" type="text" name="full_name" required />
+        </div>
+
         <div class="field">
             <label for="username">Username</label>
             <input id="username" type="text" name="username" required />
@@ -21,9 +26,8 @@
         <div class="field">
             <label for="role">Role</label>
             <select id="role" name="role" required>
-                <option value="admin">Admin</option>
-                <option value="student">Student</option>
-                <option value="reviewer">Reviewer</option>
+                <option value="supervisor">Supervisor</option>
+                <option value="employee">Employee</option>
             </select>
         </div>
 
@@ -39,24 +43,47 @@
         <thead>
             <tr>
                 <th>ID</th>
+                <th>Name</th>
                 <th>Username</th>
                 <th>Role</th>
-                <th>Action</th>
+                <th>Actions</th>
             </tr>
         </thead>
         <tbody>
             {% for u in users %}
             <tr>
                 <td>{{ u['id'] }}</td>
-                <td>{{ u['username'] }}</td>
-                <td>{{ u['role'] }}</td>
                 <td>
+                    <input
+                        name="full_name"
+                        value="{{ u['full_name'] }}"
+                        class="inline-input js-full-name"
+                        form="user-update-{{ u['id'] }}"
+                        disabled
+                    />
+                </td>
+                <td class="muted">{{ u['username'] }}</td>
+                <td>
+                    <select name="role" class="inline-select js-role" form="user-update-{{ u['id'] }}" disabled>
+                        <option value="admin" {% if u['role'] == 'admin' %}selected{% endif %}>Admin</option>
+                        <option value="supervisor" {% if u['role'] == 'supervisor' %}selected{% endif %}>Supervisor</option>
+                        <option value="employee" {% if u['role'] == 'employee' %}selected{% endif %}>Employee</option>
+                    </select>
+                </td>
+                <td>
+                    <form id="user-update-{{ u['id'] }}" action="/users/update/{{ u['id'] }}" method="post" class="inline-form user-row-form" data-user-id="{{ u['id'] }}">
+                        <input type="hidden" name="password" value="" />
+                    </form>
+
+                    <button type="button" class="js-edit-btn" title="Edit">✏️</button>
+                    <button type="button" class="js-save-btn" title="Save" style="display:none;">✅</button>
+
                     {% if current_user['id'] != u['id'] %}
-                    <form action="/users/delete/{{ u['id'] }}" method="post" class="inline-form">
-                        <button type="submit" onclick="return confirm('Are you sure you want to delete this user?')" style="background: none; border: none; color: #ef4444; padding: 0; cursor: pointer; font-weight: 600; font-size: 0.9rem;">Delete</button>
+                    <form action="/users/delete/{{ u['id'] }}" method="post" class="inline-form" style="margin-left: 8px;">
+                        <button type="submit" class="danger" title="Delete" onclick="return confirm('🗑️ Delete this user account?')">🗑️</button>
                     </form>
                     {% else %}
-                    <span class="muted">Current user</span>
+                    <span class="muted js-is-self" style="margin-left: 8px;">Current user</span>
                     {% endif %}
                 </td>
             </tr>
@@ -64,4 +91,52 @@
         </tbody>
     </table>
 </section>
+
+<script>
+    document.querySelectorAll("form.user-row-form").forEach((form) => {
+        const row = form.closest("tr");
+        if (!row) return;
+        const nameInput = row.querySelector(".js-full-name");
+        const roleSelect = row.querySelector(".js-role");
+        const editBtn = row.querySelector(".js-edit-btn");
+        const saveBtn = row.querySelector(".js-save-btn");
+        if (!editBtn || !saveBtn) return;
+
+        const original = {
+            name: nameInput.value,
+            role: roleSelect.value,
+        };
+
+        const isSelf = row.querySelector(".js-is-self") !== null;
+
+        const setEditing = (editing) => {
+            nameInput.disabled = !editing;
+            roleSelect.disabled = !editing || isSelf;
+            editBtn.style.display = editing ? "none" : "inline-block";
+            saveBtn.style.display = editing ? "inline-block" : "none";
+            if (editing) nameInput.focus();
+        };
+
+        editBtn.addEventListener("click", () => setEditing(true));
+
+        saveBtn.addEventListener("click", () => {
+            const nextName = nameInput.value.trim();
+            if (!nextName) {
+                alert("Name is required.");
+                return;
+            }
+            if (!confirm("✅ Save changes to this user?")) return;
+            form.submit();
+        });
+
+        // Escape cancels edits (client-side only)
+        form.addEventListener("keydown", (e) => {
+            if (e.key === "Escape") {
+                nameInput.value = original.name;
+                roleSelect.value = original.role;
+                setEditing(false);
+            }
+        });
+    });
+</script>
 {% endblock %}

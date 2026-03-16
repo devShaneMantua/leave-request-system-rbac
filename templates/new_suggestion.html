@@ -1,7 +1,7 @@
 {% extends 'base.html' %}
 {% block content %}
 <section class="card">
-    <h2>Submit Suggestion</h2>
+    <h2>Submit Feedback</h2>
 
     {% if message %}
     <p class="success">{{ message }}</p>
@@ -11,8 +11,8 @@
     <p class="error">{{ error }}</p>
     {% endif %}
 
-    <form action="/suggestions/new" method="post" class="form">
-        <label>Your Suggestion</label>
+    <form action="/feedback/new" method="post" class="form">
+        <label>Your Feedback</label>
         <textarea name="content" rows="6" required></textarea>
         <button type="submit">Submit</button>
     </form>

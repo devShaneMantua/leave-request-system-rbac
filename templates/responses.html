@@ -1,7 +1,7 @@
 {% extends 'base.html' %}
 {% block content %}
 <section class="card">
-    <h2>Responses</h2>
+    <h2>Manager Responses</h2>
     {% if responses %}
     <div style="display: grid; gap: 12px;">
         {% for item in responses %}
@@ -19,7 +19,7 @@
                 </div>
             </div>
             <div style="background: white; padding: 12px; border-left: 3px solid #3b82f6; margin-bottom: 8px; border-radius: 4px;">
-                <p style="margin: 0; font-size: 0.85rem; color: #94a3b8; margin-bottom: 4px;">Suggestion: <em>{{ item['suggestion_content'] }}</em></p>
+                <p style="margin: 0; font-size: 0.85rem; color: #94a3b8; margin-bottom: 4px;">Feedback: <em>{{ item['suggestion_content'] }}</em></p>
             </div>
             <p style="margin: 0; line-height: 1.6; color: #475569;">{{ item['content'] }}</p>
         </div>

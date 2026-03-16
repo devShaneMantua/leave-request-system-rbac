@@ -1,43 +1,42 @@
-<!DOCTYPE html>
+<!doctype html>
 <html lang="en">
-<head>
+  <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>{{ title }} - Digital Suggestion Box</title>
+    <title>{{ title }} - Company Leave Request System</title>
     <link rel="stylesheet" href="/static/styles.css" />
-</head>
-<body>
+  </head>
+  <body>
     <header class="topbar">
-        <h1>Digital Suggestion Box</h1>
-        {% if current_user %}
-            <div class="user-info">Logged in as <strong>{{ current_user['username'] }}</strong> ({{ current_user['role'] }})</div>
-        {% endif %}
+      <h1>Company Leave Request System</h1>
+      {% if current_user %}
+      <div class="user-info">
+        Logged in as <strong>{{ current_user['full_name'] }}</strong> ({{
+        current_user['role'] }})
+      </div>
+      {% endif %}
     </header>
 
     {% if current_user %}
     <nav class="nav">
-        {% if 'submit' in permissions.get('suggestions', []) %}
-        <a href="/suggestions/new">Submit Suggestion</a>
-        {% endif %}
+      {% if 'submit' in permissions.get('leave', []) %}
+      <a href="/leave/new">New Request</a>
+      {% endif %} {% if 'view_own' in permissions.get('leave', []) %}
+      <a href="/leave/mine">My Requests</a>
+      {% endif %} {% if 'manage' in permissions.get('users', []) %}
+      <a href="/users">Users</a>
+      {% endif %} {% if 'view_all' in permissions.get('leave', []) %}
+      <a href="/leave">All Requests</a>
+      {% endif %} {% if 'view' in permissions.get('reports', []) %}
+      <a href="/reports">Reports</a>
+      {% endif %}
 
-        {% if 'view' in permissions.get('suggestions', []) or 'manage' in permissions.get('suggestions', []) %}
-        <a href="/suggestions">Suggestions</a>
-        {% endif %}
+      <a href="/account">Account Settings</a>
 
-        {% if 'view' in permissions.get('responses', []) or 'reply' in permissions.get('responses', []) or 'manage' in permissions.get('responses', []) %}
-        <a href="/responses">Responses</a>
-        {% endif %}
-
-        {% if 'manage' in permissions.get('users', []) %}
-        <a href="/users">Users</a>
-        {% endif %}
-
-        <a href="/logout">Logout</a>
+      <a href="/logout">Logout</a>
     </nav>
     {% endif %}
 
-    <main class="container">
-        {% block content %}{% endblock %}
-    </main>
-</body>
+    <main class="container">{% block content %}{% endblock %}</main>
+  </body>
 </html>

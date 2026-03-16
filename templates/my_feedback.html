@@ -1,0 +1,23 @@
+{% extends 'base.html' %}
+{% block content %}
+<section class="card">
+    <h2>My Feedback</h2>
+    {% if feedback %}
+    <div style="display: grid; gap: 12px;">
+        {% for item in feedback %}
+        <div style="border: 1px solid #e2e8f0; border-radius: 8px; padding: 16px; background: #f8fafc;">
+            <div style="display: flex; justify-content: space-between; align-items: start; margin-bottom: 12px;">
+                <div>
+                    <h3 style="margin: 0 0 4px 0; font-size: 1rem;">Feedback #{{ item['id'] }}</h3>
+                </div>
+            </div>
+            <p style="margin: 0 0 8px 0; line-height: 1.6; color: #475569;">{{ item['content'] }}</p>
+            <div style="font-size: 0.85rem; color: #94a3b8;">{{ item['response_count'] }} response{{ item['response_count'] != 1 and 's' or '' }}</div>
+        </div>
+        {% endfor %}
+    </div>
+    {% else %}
+    <p>No feedback found.</p>
+    {% endif %}
+</section>
+{% endblock %}

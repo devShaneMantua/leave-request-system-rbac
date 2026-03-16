@@ -1,0 +1,24 @@
+{% extends 'base.html' %}
+{% block content %}
+<section class="card">
+    <h2>Reports</h2>
+    <div style="display: grid; gap: 12px; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));">
+        <div style="border: 1px solid #e2e8f0; border-radius: 10px; padding: 16px; background: #f8fafc;">
+            <div style="font-size: 0.85rem; color: #64748b;">Total requests</div>
+            <div style="font-size: 1.6rem; font-weight: 700;">{{ total }}</div>
+        </div>
+        <div style="border: 1px solid #e2e8f0; border-radius: 10px; padding: 16px; background: #f8fafc;">
+            <div style="font-size: 0.85rem; color: #64748b;">Pending</div>
+            <div style="font-size: 1.6rem; font-weight: 700;">{{ pending }}</div>
+        </div>
+        <div style="border: 1px solid #e2e8f0; border-radius: 10px; padding: 16px; background: #f8fafc;">
+            <div style="font-size: 0.85rem; color: #64748b;">Approved</div>
+            <div style="font-size: 1.6rem; font-weight: 700;">{{ approved }}</div>
+        </div>
+        <div style="border: 1px solid #e2e8f0; border-radius: 10px; padding: 16px; background: #f8fafc;">
+            <div style="font-size: 0.85rem; color: #64748b;">Rejected</div>
+            <div style="font-size: 1.6rem; font-weight: 700;">{{ rejected }}</div>
+        </div>
+    </div>
+</section>
+{% endblock %}

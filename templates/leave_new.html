@@ -1,0 +1,33 @@
+{% extends 'base.html' %}
+{% block content %}
+<section class="card">
+    <h2>New Leave Request</h2>
+
+    {% if message %}
+    <p class="success">{{ message }}</p>
+    {% endif %}
+
+    {% if error %}
+    <p class="error">{{ error }}</p>
+    {% endif %}
+
+    <form action="/leave/new" method="post" class="form">
+        <div class="field">
+            <label for="start_date">Start date</label>
+            <input id="start_date" type="date" name="start_date" required />
+        </div>
+
+        <div class="field">
+            <label for="end_date">End date</label>
+            <input id="end_date" type="date" name="end_date" required />
+        </div>
+
+        <div class="field">
+            <label for="reason">Reason</label>
+            <textarea id="reason" name="reason" rows="5" required></textarea>
+        </div>
+
+        <button type="submit">Submit Request</button>
+    </form>
+</section>
+{% endblock %}

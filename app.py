@@ -1,4 +1,6 @@
-from datetime import datetime
+from __future__ import annotations
+
+from datetime import date, datetime
 from pathlib import Path
 import sqlite3
 from typing import Optional
@@ -10,25 +12,30 @@ from fastapi.templating import Jinja2Templates
 from starlette.middleware.sessions import SessionMiddleware
 
 BASE_DIR = Path(__file__).resolve().parent
-DB_PATH = BASE_DIR / "suggestion_box.db"
+DB_PATH = BASE_DIR / "leave_requests.db"
 
-ROLE_PERMISSIONS = {
+# School demo salt. I know na dapat mo gamit og env sa real deployments
+PASSWORD_SALT = "school-demo-static-salt"
+
+ROLE_PERMISSIONS: dict[str, dict[str, list[str]]] = {
+    "employee": {"leave": ["submit", "view_own"]},
+    "supervisor": {"leave": ["view_all", "decide"]},
     "admin": {
-        "suggestions": ["manage", "view"],
-        "responses": ["manage", "reply", "view"],
+        "leave": ["view_all", "manage"],
         "users": ["manage"],
-    },
-    "student": {
-        "suggestions": ["submit"],
-        "responses": ["view"],
-        "users": [],
-    },
-    "reviewer": {
-        "suggestions": ["view"],
-        "responses": ["reply"],
-        "users": [],
+        "reports": ["view"],
     },
 }
+
+
+def hash_password(password: str) -> str:
+    import hashlib
+
+    return hashlib.sha256((PASSWORD_SALT + password).encode("utf-8")).hexdigest()
+
+
+def verify_password(password: str, hashed: str) -> bool:
+    return hash_password(password) == hashed
 
 
 def get_db() -> sqlite3.Connection:
@@ -45,51 +52,43 @@ def init_db() -> None:
         """
         CREATE TABLE IF NOT EXISTS users (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
+            full_name TEXT NOT NULL,
             username TEXT NOT NULL UNIQUE,
             password TEXT NOT NULL,
-            role TEXT NOT NULL CHECK(role IN ('admin', 'student', 'reviewer'))
+            role TEXT NOT NULL CHECK(role IN ('employee', 'supervisor', 'admin')),
+            active INTEGER NOT NULL DEFAULT 1 CHECK(active IN (0, 1))
         )
         """
     )
 
     cur.execute(
         """
-        CREATE TABLE IF NOT EXISTS suggestions (
+        CREATE TABLE IF NOT EXISTS leave_requests (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
-            student_id INTEGER NOT NULL,
-            content TEXT NOT NULL,
+            employee_id INTEGER NOT NULL,
+            start_date TEXT NOT NULL,
+            end_date TEXT NOT NULL,
+            reason TEXT NOT NULL,
+            status TEXT NOT NULL CHECK(status IN ('Pending', 'Approved', 'Rejected')) DEFAULT 'Pending',
+            decided_by INTEGER,
+            decided_at TEXT,
             created_at TEXT NOT NULL,
-            FOREIGN KEY(student_id) REFERENCES users(id)
-        )
-        """
-    )
-
-    cur.execute(
-        """
-        CREATE TABLE IF NOT EXISTS responses (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            suggestion_id INTEGER NOT NULL,
-            reviewer_id INTEGER NOT NULL,
-            content TEXT NOT NULL,
-            created_at TEXT NOT NULL,
-            FOREIGN KEY(suggestion_id) REFERENCES suggestions(id),
-            FOREIGN KEY(reviewer_id) REFERENCES users(id)
+            FOREIGN KEY(employee_id) REFERENCES users(id),
+            FOREIGN KEY(decided_by) REFERENCES users(id)
         )
         """
     )
 
     cur.execute("SELECT COUNT(*) AS total FROM users")
-    total_users = cur.fetchone()["total"]
-
-    if total_users == 0:
-        seed_users = [
-            ("admin", "poiuytrewq", "admin"),
-            ("student", "poiuytrewq", "student"),
-            ("reviewer", "poiuytrewq", "reviewer"),
+    if cur.fetchone()["total"] == 0:
+        seed = [
+            ("Admin User", "admin", "poiuytrewq", "admin", 1),
+            ("Supervisor User", "supervisor", "poiuytrewq", "supervisor", 1),
+            ("Employee User", "employee", "poiuytrewq", "employee", 1),
         ]
         cur.executemany(
-            "INSERT INTO users (username, password, role) VALUES (?, ?, ?)",
-            seed_users,
+            "INSERT INTO users (full_name, username, password, role, active) VALUES (?, ?, ?, ?, ?)",
+            [(n, u, hash_password(p), r, a) for (n, u, p, r, a) in seed],
         )
 
     conn.commit()
@@ -101,13 +100,14 @@ def has_permission(role: str, module: str, action: str) -> bool:
 
 
 def get_current_user(request: Request) -> Optional[sqlite3.Row]:
-    user_id = request.session.get("user_id")
-    if not user_id:
+    uid = request.session.get("user_id")
+    if not uid:
         return None
-
     conn = get_db()
-    user = conn.execute("SELECT * FROM users WHERE id = ?", (user_id,)).fetchone()
+    user = conn.execute("SELECT * FROM users WHERE id = ?", (uid,)).fetchone()
     conn.close()
+    if not user:
+        return None
     return user
 
 
@@ -126,17 +126,12 @@ def ensure_permission(user: sqlite3.Row, module: str, action: str) -> None:
 def base_context(request: Request, title: str, **extra) -> dict:
     user = get_current_user(request)
     permissions = ROLE_PERMISSIONS.get(user["role"], {}) if user else {}
-    context = {
-        "request": request,
-        "title": title,
-        "current_user": user,
-        "permissions": permissions,
-    }
-    context.update(extra)
-    return context
+    ctx = {"request": request, "title": title, "current_user": user, "permissions": permissions}
+    ctx.update(extra)
+    return ctx
 
 
-app = FastAPI(title="Digital Suggestion Box")
+app = FastAPI(title="Company Leave Request System")
 app.add_middleware(SessionMiddleware, secret_key="simple-secret-key")
 app.mount("/static", StaticFiles(directory=str(BASE_DIR / "static")), name="static")
 templates = Jinja2Templates(directory=str(BASE_DIR / "templates"))
@@ -147,12 +142,11 @@ def on_startup() -> None:
     init_db()
 
 
-def get_role_destination(user) -> str:
-    """Get the appropriate destination URL based on user role."""
-    if user["role"] == "student":
-        return "/suggestions/new"
-    if user["role"] == "reviewer":
-        return "/suggestions"
+def get_role_destination(user: sqlite3.Row) -> str:
+    if user["role"] == "employee":
+        return "/leave/mine"
+    if user["role"] == "supervisor":
+        return "/leave"
     return "/users"
 
 
@@ -166,22 +160,17 @@ def home(request: Request):
 
 @app.get("/login", response_class=HTMLResponse)
 def login_page(request: Request):
-    return templates.TemplateResponse(
-        "login.html",
-        base_context(request, "Login", error=None),
-    )
+    return templates.TemplateResponse("login.html", base_context(request, "Login", error=None))
 
 
 @app.post("/login", response_class=HTMLResponse)
 def login(request: Request, username: str = Form(...), password: str = Form(...)):
+    username = username.strip()
     conn = get_db()
-    user = conn.execute(
-        "SELECT * FROM users WHERE username = ? AND password = ?",
-        (username, password),
-    ).fetchone()
+    user = conn.execute("SELECT * FROM users WHERE username = ?", (username,)).fetchone()
     conn.close()
 
-    if not user:
+    if not user or not verify_password(password, user["password"]):
         return templates.TemplateResponse(
             "login.html",
             base_context(request, "Login", error="Invalid credentials."),
@@ -197,235 +186,152 @@ def logout(request: Request):
     return RedirectResponse(url="/login", status_code=303)
 
 
-@app.get("/home")
-def role_home(request: Request):
+@app.get("/leave/new", response_class=HTMLResponse)
+def new_leave_page(request: Request):
     user = ensure_logged_in(request)
-    return RedirectResponse(url=get_role_destination(user), status_code=303)
+    ensure_permission(user, "leave", "submit")
+    return templates.TemplateResponse(
+        "leave_new.html",
+        base_context(request, "New Leave Request", error=None, message=request.query_params.get("message")),
+    )
 
 
-@app.get("/dashboard")
-def legacy_dashboard_redirect(request: Request):
+@app.post("/leave/new", response_class=HTMLResponse)
+def create_leave(
+    request: Request,
+    start_date: str = Form(...),
+    end_date: str = Form(...),
+    reason: str = Form(...),
+):
     user = ensure_logged_in(request)
-    return RedirectResponse(url=get_role_destination(user), status_code=303)
+    ensure_permission(user, "leave", "submit")
 
+    reason = reason.strip()
+    if not reason:
+        return templates.TemplateResponse(
+            "leave_new.html",
+            base_context(request, "New Leave Request", error="Reason is required.", message=None),
+        )
 
-@app.get("/suggestions", response_class=HTMLResponse)
-def list_suggestions(request: Request):
-    user = ensure_logged_in(request)
-    if has_permission(user["role"], "suggestions", "manage"):
-        allowed = True
-    else:
-        allowed = has_permission(user["role"], "suggestions", "view")
-    if not allowed:
-        raise HTTPException(status_code=403, detail="Not allowed to view suggestions.")
+    try:
+        sd = date.fromisoformat(start_date)
+        ed = date.fromisoformat(end_date)
+    except ValueError:
+        return templates.TemplateResponse(
+            "leave_new.html",
+            base_context(request, "New Leave Request", error="Invalid date format.", message=None),
+        )
+    if ed < sd:
+        return templates.TemplateResponse(
+            "leave_new.html",
+            base_context(request, "New Leave Request", error="End date must be after start date.", message=None),
+        )
 
     conn = get_db()
-    suggestions = conn.execute(
+    conn.execute(
         """
-        SELECT s.id, s.content, s.created_at, u.username AS student_name,
-               COUNT(r.id) AS response_count
-        FROM suggestions s
-        JOIN users u ON u.id = s.student_id
-        LEFT JOIN responses r ON r.suggestion_id = s.id
-        GROUP BY s.id
-        ORDER BY s.id DESC
+        INSERT INTO leave_requests (employee_id, start_date, end_date, reason, status, created_at)
+        VALUES (?, ?, ?, ?, 'Pending', ?)
+        """,
+        (user["id"], sd.isoformat(), ed.isoformat(), reason, datetime.utcnow().isoformat(timespec="seconds")),
+    )
+    conn.commit()
+    conn.close()
+    return RedirectResponse(url="/leave/new?message=Request submitted.", status_code=303)
+
+
+@app.get("/leave/mine", response_class=HTMLResponse)
+def my_leave_requests(request: Request):
+    user = ensure_logged_in(request)
+    ensure_permission(user, "leave", "view_own")
+
+    conn = get_db()
+    raw_items = conn.execute(
+        """
+        SELECT id, start_date, end_date, reason, status, created_at
+        FROM leave_requests
+        WHERE employee_id = ?
+        ORDER BY id DESC
+        """,
+        (user["id"],),
+    ).fetchall()
+    conn.close()
+
+    items = []
+    for r in raw_items:
+        created_at = r["created_at"]
+        try:
+            dt = datetime.fromisoformat(created_at)
+            created_at_display = dt.strftime("%b %d, %Y %I:%M %p")
+        except Exception:
+            created_at_display = created_at
+        items.append({**dict(r), "created_at_display": created_at_display})
+
+    return templates.TemplateResponse(
+        "leave_mine.html",
+        base_context(request, "My Leave Requests", items=items),
+    )
+
+
+@app.get("/leave", response_class=HTMLResponse)
+def all_leave_requests(request: Request):
+    user = ensure_logged_in(request)
+    ensure_permission(user, "leave", "view_all")
+
+    conn = get_db()
+    raw_items = conn.execute(
+        """
+        SELECT lr.id, lr.start_date, lr.end_date, lr.reason, lr.status, lr.created_at,
+               u.full_name AS employee_name
+        FROM leave_requests lr
+        JOIN users u ON u.id = lr.employee_id
+        ORDER BY lr.id DESC
         """
     ).fetchall()
     conn.close()
 
-    return templates.TemplateResponse(
-        "suggestions.html",
-        base_context(request, "Suggestions", suggestions=suggestions),
-    )
-
-
-@app.get("/suggestions/new", response_class=HTMLResponse)
-def new_suggestion_page(request: Request):
-    user = ensure_logged_in(request)
-    ensure_permission(user, "suggestions", "submit")
-    message = request.query_params.get("message")
-    return templates.TemplateResponse(
-        "new_suggestion.html",
-        base_context(request, "Submit Suggestion", error=None, message=message),
-    )
-
-
-@app.post("/suggestions/new", response_class=HTMLResponse)
-def create_suggestion(request: Request, content: str = Form(...)):
-    user = ensure_logged_in(request)
-    ensure_permission(user, "suggestions", "submit")
-
-    if not content.strip():
-        return templates.TemplateResponse(
-            "new_suggestion.html",
-            base_context(request, "Submit Suggestion", error="Suggestion is required."),
-        )
-
-    conn = get_db()
-    conn.execute(
-        "INSERT INTO suggestions (student_id, content, created_at) VALUES (?, ?, ?)",
-        (user["id"], content.strip(), datetime.utcnow().isoformat(timespec="seconds")),
-    )
-    conn.commit()
-    conn.close()
-    return RedirectResponse(
-        url="/suggestions/new?message=Suggestion submitted successfully.", status_code=303
-    )
-
-
-@app.post("/suggestions/delete/{suggestion_id}")
-def delete_suggestion(request: Request, suggestion_id: int):
-    user = ensure_logged_in(request)
-    ensure_permission(user, "suggestions", "manage")
-
-    conn = get_db()
-    conn.execute("DELETE FROM responses WHERE suggestion_id = ?", (suggestion_id,))
-    conn.execute("DELETE FROM suggestions WHERE id = ?", (suggestion_id,))
-    conn.commit()
-    conn.close()
-    return RedirectResponse(url="/suggestions", status_code=303)
-
-
-@app.get("/responses", response_class=HTMLResponse)
-def list_responses(request: Request):
-    user = ensure_logged_in(request)
-    conn = get_db()
-
-    if has_permission(user["role"], "responses", "manage"):
-        responses = conn.execute(
-            """
-            SELECT r.id, r.content, r.created_at,
-                   s.id AS suggestion_id, s.content AS suggestion_content,
-                   reviewer.username AS reviewer_name,
-                   student.username AS student_name
-            FROM responses r
-            JOIN suggestions s ON s.id = r.suggestion_id
-            JOIN users reviewer ON reviewer.id = r.reviewer_id
-            JOIN users student ON student.id = s.student_id
-            ORDER BY r.id DESC
-            """
-        ).fetchall()
-    elif has_permission(user["role"], "responses", "view"):
-        responses = conn.execute(
-            """
-            SELECT r.id, r.content, r.created_at,
-                   s.id AS suggestion_id, s.content AS suggestion_content,
-                   reviewer.username AS reviewer_name,
-                   student.username AS student_name
-            FROM responses r
-            JOIN suggestions s ON s.id = r.suggestion_id
-            JOIN users reviewer ON reviewer.id = r.reviewer_id
-            JOIN users student ON student.id = s.student_id
-            WHERE s.student_id = ?
-            ORDER BY r.id DESC
-            """,
-            (user["id"],),
-        ).fetchall()
-    elif has_permission(user["role"], "responses", "reply"):
-        responses = conn.execute(
-            """
-            SELECT r.id, r.content, r.created_at,
-                   s.id AS suggestion_id, s.content AS suggestion_content,
-                   reviewer.username AS reviewer_name,
-                   student.username AS student_name
-            FROM responses r
-            JOIN suggestions s ON s.id = r.suggestion_id
-            JOIN users reviewer ON reviewer.id = r.reviewer_id
-            JOIN users student ON student.id = s.student_id
-            WHERE r.reviewer_id = ?
-            ORDER BY r.id DESC
-            """,
-            (user["id"],),
-        ).fetchall()
-    else:
-        conn.close()
-        raise HTTPException(status_code=403, detail="Not allowed to view responses.")
-
-    conn.close()
-    return templates.TemplateResponse(
-        "responses.html",
-        base_context(request, "Responses", responses=responses),
-    )
-
-
-@app.get("/responses/new/{suggestion_id}", response_class=HTMLResponse)
-def new_response_page(request: Request, suggestion_id: int):
-    user = ensure_logged_in(request)
-    ensure_permission(user, "responses", "reply")
-
-    conn = get_db()
-    suggestion = conn.execute(
-        """
-        SELECT s.id, s.content, u.username AS student_name
-        FROM suggestions s
-        JOIN users u ON u.id = s.student_id
-        WHERE s.id = ?
-        """,
-        (suggestion_id,),
-    ).fetchone()
-    conn.close()
-
-    if not suggestion:
-        raise HTTPException(status_code=404, detail="Suggestion not found.")
+    items = []
+    for r in raw_items:
+        created_at = r["created_at"]
+        try:
+            dt = datetime.fromisoformat(created_at)
+            created_at_display = dt.strftime("%b %d, %Y %I:%M %p")
+        except Exception:
+            created_at_display = created_at
+        items.append({**dict(r), "created_at_display": created_at_display})
 
     return templates.TemplateResponse(
-        "new_response.html",
-        base_context(request, "Write Response", suggestion=suggestion, error=None),
+        "leave_all.html",
+        base_context(request, "All Leave Requests", items=items),
     )
 
 
-@app.post("/responses/new/{suggestion_id}")
-def create_response(request: Request, suggestion_id: int, content: str = Form(...)):
+@app.post("/leave/{request_id}/decide", response_class=HTMLResponse)
+def decide_leave(request: Request, request_id: int, decision: str = Form(...)):
     user = ensure_logged_in(request)
-    ensure_permission(user, "responses", "reply")
+    ensure_permission(user, "leave", "decide")
 
-    if not content.strip():
-        conn = get_db()
-        suggestion = conn.execute(
-            """
-            SELECT s.id, s.content, u.username AS student_name
-            FROM suggestions s
-            JOIN users u ON u.id = s.student_id
-            WHERE s.id = ?
-            """,
-            (suggestion_id,),
-        ).fetchone()
-        conn.close()
-        return templates.TemplateResponse(
-            "new_response.html",
-            base_context(request, "Write Response", suggestion=suggestion, error="Response is required."),
-        )
+    decision = decision.strip().capitalize()
+    if decision not in ("Pending", "Approved", "Rejected"):
+        return RedirectResponse(url="/leave", status_code=303)
 
     conn = get_db()
-    exists = conn.execute("SELECT id FROM suggestions WHERE id = ?", (suggestion_id,)).fetchone()
+    exists = conn.execute("SELECT id FROM leave_requests WHERE id = ?", (request_id,)).fetchone()
     if not exists:
         conn.close()
-        raise HTTPException(status_code=404, detail="Suggestion not found.")
+        raise HTTPException(status_code=404, detail="Leave request not found.")
 
     conn.execute(
-        "INSERT INTO responses (suggestion_id, reviewer_id, content, created_at) VALUES (?, ?, ?, ?)",
-        (
-            suggestion_id,
-            user["id"],
-            content.strip(),
-            datetime.utcnow().isoformat(timespec="seconds"),
-        ),
+        """
+        UPDATE leave_requests
+        SET status = ?, decided_by = ?, decided_at = ?
+        WHERE id = ?
+        """,
+        (decision, user["id"], datetime.utcnow().isoformat(timespec="seconds"), request_id),
     )
     conn.commit()
     conn.close()
-    return RedirectResponse(url="/responses", status_code=303)
-
-
-@app.post("/responses/delete/{response_id}")
-def delete_response(request: Request, response_id: int):
-    user = ensure_logged_in(request)
-    ensure_permission(user, "responses", "manage")
-
-    conn = get_db()
-    conn.execute("DELETE FROM responses WHERE id = ?", (response_id,))
-    conn.commit()
-    conn.close()
-    return RedirectResponse(url="/responses", status_code=303)
+    return RedirectResponse(url="/leave", status_code=303)
 
 
 @app.get("/users", response_class=HTMLResponse)
@@ -434,18 +340,26 @@ def list_users(request: Request):
     ensure_permission(user, "users", "manage")
 
     conn = get_db()
-    users = conn.execute("SELECT id, username, role FROM users ORDER BY id").fetchall()
+    # Hide admin account from the management table
+    users = conn.execute(
+        "SELECT id, full_name, username, role FROM users WHERE role != 'admin' ORDER BY id"
+    ).fetchall()
     conn.close()
-
     return templates.TemplateResponse(
         "users.html",
-        base_context(request, "User Management", users=users, error=None),
+        base_context(
+            request,
+            "User Management",
+            users=users,
+            error=request.query_params.get("error"),
+        ),
     )
 
 
 @app.post("/users/new", response_class=HTMLResponse)
 def create_user(
     request: Request,
+    full_name: str = Form(...),
     username: str = Form(...),
     password: str = Form(...),
     role: str = Form(...),
@@ -453,13 +367,24 @@ def create_user(
     user = ensure_logged_in(request)
     ensure_permission(user, "users", "manage")
 
+    full_name = full_name.strip()
     username = username.strip()
     password = password.strip()
     role = role.strip().lower()
 
-    if not username or not password or role not in ROLE_PERMISSIONS:
+    # admin accounts are seeded
+    if role == "admin":
         conn = get_db()
-        users = conn.execute("SELECT id, username, role FROM users ORDER BY id").fetchall()
+        users = conn.execute("SELECT id, full_name, username, role FROM users ORDER BY id").fetchall()
+        conn.close()
+        return templates.TemplateResponse(
+            "users.html",
+            base_context(request, "User Management", users=users, error="Only one Admin account is allowed."),
+        )
+
+    if not full_name or not username or not password or role not in ROLE_PERMISSIONS:
+        conn = get_db()
+        users = conn.execute("SELECT id, full_name, username, role FROM users ORDER BY id").fetchall()
         conn.close()
         return templates.TemplateResponse(
             "users.html",
@@ -467,35 +392,127 @@ def create_user(
                 request,
                 "User Management",
                 users=users,
-                error="Valid username, password, and role are required.",
+                error="Valid name, username, password, and role are required.",
             ),
         )
 
     conn = get_db()
     try:
         conn.execute(
-            "INSERT INTO users (username, password, role) VALUES (?, ?, ?)",
-            (username, password, role),
+            "INSERT INTO users (full_name, username, password, role, active) VALUES (?, ?, ?, ?, 1)",
+            (full_name, username, hash_password(password), role),
         )
         conn.commit()
     except sqlite3.IntegrityError:
-        users = conn.execute("SELECT id, username, role FROM users ORDER BY id").fetchall()
+        users = conn.execute("SELECT id, full_name, username, role FROM users ORDER BY id").fetchall()
         conn.close()
         return templates.TemplateResponse(
             "users.html",
-            base_context(
-                request,
-                "User Management",
-                users=users,
-                error="Username already exists.",
-            ),
+            base_context(request, "User Management", users=users, error="Username already exists."),
         )
-
     conn.close()
     return RedirectResponse(url="/users", status_code=303)
 
 
-@app.post("/users/delete/{user_id}")
+@app.post("/users/update/{user_id}", response_class=HTMLResponse)
+def update_user(
+    request: Request,
+    user_id: int,
+    full_name: str = Form(...),
+    username: str = Form(""),
+    role: str = Form(...),
+    password: str = Form(""),
+):
+    current_user = ensure_logged_in(request)
+    ensure_permission(current_user, "users", "manage")
+
+    full_name = full_name.strip()
+    username = username.strip()
+    role = role.strip().lower()
+    password = password.strip()
+
+    if not full_name or role not in ROLE_PERMISSIONS:
+        return RedirectResponse(url="/users", status_code=303)
+
+    if current_user["role"] == "admin" and user_id == current_user["id"]:
+        return RedirectResponse(url="/account", status_code=303)
+
+    # Prevent role changes to admin through this endpoint
+    if role == "admin":
+        return RedirectResponse(url="/users", status_code=303)
+
+    conn = get_db()
+    try:
+        if password:
+            conn.execute(
+                "UPDATE users SET full_name = ?, role = ?, password = ? WHERE id = ?",
+                (full_name, role, hash_password(password), user_id),
+            )
+        else:
+            conn.execute("UPDATE users SET full_name = ?, role = ? WHERE id = ?", (full_name, role, user_id))
+
+        conn.commit()
+    except sqlite3.IntegrityError:
+        conn.close()
+        return RedirectResponse(url="/users?error=Username+already+exists.", status_code=303)
+
+    conn.close()
+    if current_user["id"] == user_id:
+        return RedirectResponse(url="/users", status_code=303)
+    return RedirectResponse(url="/users", status_code=303)
+
+
+@app.get("/account", response_class=HTMLResponse)
+def account_settings(request: Request):
+    user = ensure_logged_in(request)
+    return templates.TemplateResponse(
+        "account.html",
+        base_context(
+            request,
+            "Account Settings",
+            error=request.query_params.get("error"),
+            message=request.query_params.get("message"),
+        ),
+    )
+
+
+@app.post("/account", response_class=HTMLResponse)
+def update_account(
+    request: Request,
+    full_name: str = Form(...),
+    username: str = Form(...),
+    password: str = Form(""),
+):
+    user = ensure_logged_in(request)
+    full_name = full_name.strip()
+    username = username.strip()
+    password = password.strip()
+
+    if not full_name or not username:
+        return RedirectResponse(url="/account?error=Name+and+username+are+required.", status_code=303)
+
+    conn = get_db()
+    try:
+        if password:
+            conn.execute(
+                "UPDATE users SET full_name = ?, username = ?, password = ? WHERE id = ?",
+                (full_name, username, hash_password(password), user["id"]),
+            )
+        else:
+            conn.execute(
+                "UPDATE users SET full_name = ?, username = ? WHERE id = ?",
+                (full_name, username, user["id"]),
+            )
+        conn.commit()
+    except sqlite3.IntegrityError:
+        conn.close()
+        return RedirectResponse(url="/account?error=Username+already+exists.", status_code=303)
+
+    conn.close()
+    return RedirectResponse(url="/account?message=Updated+successfully.", status_code=303)
+
+
+@app.post("/users/delete/{user_id}", response_class=HTMLResponse)
 def delete_user(request: Request, user_id: int):
     current_user = ensure_logged_in(request)
     ensure_permission(current_user, "users", "manage")
@@ -510,21 +527,33 @@ def delete_user(request: Request, user_id: int):
     return RedirectResponse(url="/users", status_code=303)
 
 
+
+@app.get("/reports", response_class=HTMLResponse)
+def reports_page(request: Request):
+    user = ensure_logged_in(request)
+    ensure_permission(user, "reports", "view")
+
+    conn = get_db()
+    total = conn.execute("SELECT COUNT(*) AS c FROM leave_requests").fetchone()["c"]
+    pending = conn.execute("SELECT COUNT(*) AS c FROM leave_requests WHERE status = 'Pending'").fetchone()["c"]
+    approved = conn.execute("SELECT COUNT(*) AS c FROM leave_requests WHERE status = 'Approved'").fetchone()["c"]
+    rejected = conn.execute("SELECT COUNT(*) AS c FROM leave_requests WHERE status = 'Rejected'").fetchone()["c"]
+    conn.close()
+    return templates.TemplateResponse(
+        "reports.html",
+        base_context(request, "Reports", total=total, pending=pending, approved=approved, rejected=rejected),
+    )
+
+
 @app.exception_handler(HTTPException)
 async def http_exception_handler(request: Request, exc: HTTPException):
     if exc.status_code == 401:
         return RedirectResponse(url="/login", status_code=303)
 
-    if exc.status_code in (403, 404):
-        title = "Access Error" if exc.status_code == 403 else "Not Found"
-        return templates.TemplateResponse(
-            "error.html",
-            base_context(request, title, message=exc.detail),
-            status_code=exc.status_code,
-        )
-
+    title = "Access Error" if exc.status_code == 403 else "Not Found" if exc.status_code == 404 else "Error"
     return templates.TemplateResponse(
         "error.html",
-        base_context(request, "Error", message="An unexpected error happened."),
+        base_context(request, title, message=exc.detail),
         status_code=exc.status_code,
     )
+

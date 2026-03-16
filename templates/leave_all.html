@@ -1,0 +1,62 @@
+{% extends 'base.html' %}
+{% block content %}
+<section class="card">
+    <h2>All Leave Requests</h2>
+
+    {% if items %}
+    <table>
+        <thead>
+            <tr>
+                <th>ID</th>
+                <th>Employee</th>
+                <th>Date range</th>
+                <th>Status</th>
+                <th>Reason</th>
+                <th>Actions</th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for r in items %}
+            <tr>
+                <td>{{ r['id'] }}</td>
+                <td>{{ r['employee_name'] }}</td>
+                <td>{{ r['start_date'] }} → {{ r['end_date'] }}</td>
+                <td>
+                    <span class="status status-{{ r['status']|lower }}">{{ r['status'] }}</span>
+                </td>
+                <td>{{ r['reason'] }}</td>
+                <td>
+                    {% if 'decide' in permissions.get('leave', []) %}
+                    <form action="/leave/{{ r['id'] }}/decide" method="post" class="inline-form leave-decide-form">
+                        <select name="decision" class="inline-select">
+                            <option value="Pending" {% if r['status'] == 'Pending' %}selected{% endif %}>Pending</option>
+                            <option value="Approved" {% if r['status'] == 'Approved' %}selected{% endif %}>Approved</option>
+                            <option value="Rejected" {% if r['status'] == 'Rejected' %}selected{% endif %}>Rejected</option>
+                        </select>
+                        <button type="submit" class="btn-ghost">Confirm</button>
+                    </form>
+                    {% else %}
+                    <span class="muted">No actions</span>
+                    {% endif %}
+                </td>
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+    {% else %}
+    <p>No leave requests found.</p>
+    {% endif %}
+</section>
+
+<script>
+    // Confirmation + allow changing mind later (status is editable anytime)
+    document.querySelectorAll("form.leave-decide-form").forEach((form) => {
+        form.addEventListener("submit", (e) => {
+            const status = form.querySelector("select[name='decision']").value;
+            if (!confirm(`Set this request to "${status}"?`)) {
+                e.preventDefault();
+            }
+        });
+    });
+</script>
+{% endblock %}

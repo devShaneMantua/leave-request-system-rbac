@@ -1,0 +1,35 @@
+{% extends 'base.html' %}
+{% block content %}
+<section class="card">
+    <h2>My Leave Requests</h2>
+
+    {% if items %}
+    <table>
+        <thead>
+            <tr>
+                <th>ID</th>
+                <th>Date range</th>
+                <th>Status</th>
+                <th>Reason</th>
+                <th>Submitted</th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for r in items %}
+            <tr>
+                <td>{{ r['id'] }}</td>
+                <td>{{ r['start_date'] }} → {{ r['end_date'] }}</td>
+                <td>
+                    <span class="status status-{{ r['status']|lower }}">{{ r['status'] }}</span>
+                </td>
+                <td>{{ r['reason'] }}</td>
+                <td class="muted">{{ r['created_at_display'] }}</td>
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+    {% else %}
+    <p>No leave requests yet.</p>
+    {% endif %}
+</section>
+{% endblock %}
